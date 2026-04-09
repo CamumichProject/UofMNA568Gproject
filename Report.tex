@@ -1,0 +1,288 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{cite}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+
+\begin{document}
+
+\title{Evaluating Invariant Extended Kalman Filter Performance for Unmanned Surface Vessel State Estimation Under Varying Sea Conditions}
+
+\author{
+  \IEEEauthorblockN{Arvind Madhu Kutirakulam}
+  \IEEEauthorblockA{University of Michigan\\Ann Arbor, MI\\akutira@umich.edu}
+  \and
+  \IEEEauthorblockN{Campbell Taylor}
+  \IEEEauthorblockA{University of Michigan\\Ann Arbor, MI\\email@umich.edu}
+  \and
+  \IEEEauthorblockN{Shuai Xu}
+  \IEEEauthorblockA{University of Michigan\\Ann Arbor, MI\\shuaixu@umich.edu}
+}
+
+\maketitle
+
+% ============================================================
+\begin{abstract}
+Unmanned Surface Vessels (USVs) increasingly rely on inertial navigation systems (INS) for state estimation, yet heavy sea states can degrade INS accuracy through aggressive vessel motions and sensor drift. This paper presents a simulation-based comparison of three state estimation approaches for USVs: a standard Extended Kalman Filter (EKF), an Error-State EKF, and an Invariant Extended Kalman Filter (In-EKF). We evaluate each filter across a range of sea states and ocean current conditions using a custom simulation environment driven by realistic wave spectra. Our results demonstrate how estimation error scales with disturbance intensity and highlight the robustness advantages of geometry-aware filtering for marine navigation.
+% TODO: Update abstract with final quantitative results before submission.
+\end{abstract}
+
+\begin{IEEEkeywords}
+state estimation, extended Kalman filter, invariant EKF, unmanned surface vessel, inertial navigation, sea state
+\end{IEEEkeywords}
+
+% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Unmanned Surface Vessels (USVs) are a rapidly growing segment of the global small craft fleet, with applications spanning environmental monitoring, maritime security, and oceanographic research. Reliable state estimation---accurately knowing position, velocity, and orientation---is fundamental to autonomous USV operation.
+
+Most USV navigation systems fuse Global Positioning System (GPS) data with Inertial Navigation System (INS) measurements via Kalman filtering techniques~\cite{hawaii_usv}. However, GPS signals may be unavailable or degraded in contested or remote environments, forcing greater reliance on INS alone.
+
+A key concern in INS-dominant operation is that heavy sea states---characterized by large, high-frequency wave motions---may accelerate sensor drift and degrade estimation accuracy beyond levels observed in calm testing conditions. This motivates the central question of our work:
+
+\emph{How does estimation error scale with sea state severity, and can geometry-aware filters such as the Invariant EKF (In-EKF) maintain robustness where standard approaches degrade?}
+
+Our contributions are:
+\begin{enumerate}
+  \item A reproducible simulation benchmark for USV state estimation under parameterized sea states and ocean currents.
+  \item Implementation and comparison of standard EKF, Error-State EKF, and In-EKF for the USV navigation problem.
+  \item Quantitative analysis of estimation error scaling with disturbance intensity.
+\end{enumerate}
+
+% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+% TODO: Expand with 5-8 references. Suggested topics:
+% - Kalman filtering for marine vehicles
+% - In-EKF theory (Barrau & Bonnabel)
+% - USV navigation and INS drift
+% - Sea state modeling and wave spectra
+
+Kalman filtering has been widely applied to marine vehicle navigation. Early work focused on fusing GPS and INS measurements for surface vessels, demonstrating effective position estimation in calm conditions~\cite{hawaii_usv}.
+
+The Invariant Extended Kalman Filter was introduced by Barrau and Bonnabel~\cite{barrau2017invariant}, exploiting Lie group symmetry in the estimation error to achieve improved convergence and consistency properties. While In-EKF has been validated for ground robots and aerial vehicles, its application to USVs operating in high sea states remains relatively unexplored.
+
+Sea state modeling typically employs standard wave spectra (e.g., Pierson--Moskowitz, JONSWAP) to characterize ocean surface disturbances~\cite{fossen2011handbook}. The interaction between wave-induced vessel motion and INS drift is a known concern but has received limited quantitative treatment in the filtering literature.
+
+% ============================================================
+\section{Problem Formulation}
+\label{sec:problem}
+
+\subsection{USV State and Dynamics}
+
+We model the USV as a rigid body operating in the horizontal plane. The state vector is:
+\begin{equation}
+  \mathbf{x} = \begin{bmatrix} p_x & p_y & v & \psi & \omega \end{bmatrix}^\top
+\end{equation}
+where $p_x, p_y$ denote position (m), $v$ is forward speed (m/s), $\psi$ is heading (rad), and $\omega$ is yaw rate (rad/s).
+
+The discrete-time process model is:
+\begin{equation}
+  \mathbf{x}_{k+1} = f(\mathbf{x}_k) =
+  \begin{bmatrix}
+    p_x + v \cos(\psi)\,\Delta t \\
+    p_y + v \sin(\psi)\,\Delta t \\
+    v \\
+    \psi + \omega\,\Delta t \\
+    \omega
+  \end{bmatrix}
+  + \mathbf{w}_k
+  \label{eq:process}
+\end{equation}
+where $\mathbf{w}_k \sim \mathcal{N}(\mathbf{0}, \mathbf{Q})$ is process noise.
+
+\subsection{Measurement Models}
+
+GPS provides position measurements:
+\begin{equation}
+  \mathbf{z}_{\text{gps}} = \begin{bmatrix} p_x \\ p_y \end{bmatrix} + \mathbf{v}_{\text{gps}}, \quad \mathbf{v}_{\text{gps}} \sim \mathcal{N}(\mathbf{0}, \mathbf{R}_{\text{gps}})
+\end{equation}
+
+A compass/IMU provides heading:
+\begin{equation}
+  z_{\psi} = \psi + v_{\psi}, \quad v_{\psi} \sim \mathcal{N}(0, R_{\psi})
+\end{equation}
+
+\subsection{Sea State Disturbance Model}
+
+% TODO: Fill in with chosen wave spectrum model (Pierson-Moskowitz, JONSWAP, etc.)
+% and how disturbances enter the dynamics (additive force, current drift, etc.)
+
+Ocean disturbances are modeled using a [Pierson--Moskowitz / JONSWAP] wave spectrum parameterized by significant wave height $H_s$ and peak period $T_p$. Wave-induced forces enter the dynamics as additional process noise and bias terms whose magnitude scales with sea state severity.
+
+% ============================================================
+\section{Approach}
+\label{sec:approach}
+
+\subsection{Standard EKF Baseline}
+
+The standard EKF linearizes the process model~\eqref{eq:process} about the current state estimate using the Jacobian $\mathbf{F}_k = \left.\frac{\partial f}{\partial \mathbf{x}}\right|_{\hat{\mathbf{x}}_k}$ and applies the standard predict--update cycle:
+
+\textbf{Predict:}
+\begin{align}
+  \hat{\mathbf{x}}_{k|k-1} &= f(\hat{\mathbf{x}}_{k-1|k-1}) \\
+  \mathbf{P}_{k|k-1} &= \mathbf{F}_k \mathbf{P}_{k-1|k-1} \mathbf{F}_k^\top + \mathbf{Q}
+\end{align}
+
+\textbf{Update:}
+\begin{align}
+  \mathbf{K}_k &= \mathbf{P}_{k|k-1} \mathbf{H}^\top (\mathbf{H} \mathbf{P}_{k|k-1} \mathbf{H}^\top + \mathbf{R})^{-1} \\
+  \hat{\mathbf{x}}_{k|k} &= \hat{\mathbf{x}}_{k|k-1} + \mathbf{K}_k (\mathbf{z}_k - h(\hat{\mathbf{x}}_{k|k-1})) \\
+  \mathbf{P}_{k|k} &= (\mathbf{I} - \mathbf{K}_k \mathbf{H}) \mathbf{P}_{k|k-1}
+\end{align}
+
+\subsection{Error-State EKF}
+
+% TODO: Add error-state formulation if implemented.
+% Key difference: state is split into nominal + error; filter estimates the error.
+
+The Error-State EKF separates the state into a nominal trajectory propagated by the full nonlinear model and a small error state estimated by the filter. This formulation can offer improved numerical conditioning for rotation states.
+
+\subsection{Invariant EKF (In-EKF)}
+
+% TODO: Arvind to fill in In-EKF formulation.
+% Key points: Lie group state, left/right invariant error, invariant observation.
+
+The In-EKF formulates the estimation problem on a matrix Lie group, defining the error as a group operation rather than vector subtraction. This yields an error whose dynamics are independent of the state estimate (the ``log-linear'' property), leading to improved convergence and consistency~\cite{barrau2017invariant}.
+
+% ============================================================
+\section{Simulation Environment}
+\label{sec:simulation}
+
+% TODO: Campbell to detail simulator architecture.
+% Include: wave spectrum generation, craft dynamics integration, sensor models,
+% scenario parameters (sea states, current profiles).
+
+The simulation environment generates USV trajectories under configurable sea state and current conditions. Key components include:
+\begin{itemize}
+  \item Wave spectrum generator ([Pierson--Moskowitz / JONSWAP]) parameterized by $H_s$ and $T_p$.
+  \item Rigid-body USV dynamics with wave-induced forcing.
+  \item Sensor models for GPS (with configurable dropout) and IMU/compass.
+  \item Configurable ocean current profiles (constant, time-varying).
+\end{itemize}
+
+% TODO: Add figure showing simulator block diagram.
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=\columnwidth]{figures/simulator_block.pdf}
+%   \caption{Simulation environment block diagram.}
+%   \label{fig:simulator}
+% \end{figure}
+
+% ============================================================
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Experimental Setup}
+
+% TODO: Fill in with final experiment parameters.
+
+We evaluate each filter across the following conditions:
+\begin{itemize}
+  \item \textbf{Sea states:} Calm ($H_s = $ [X] m), Moderate ($H_s = $ [X] m), Heavy ($H_s = $ [X] m).
+  \item \textbf{Current profiles:} No current, constant [X] m/s, time-varying.
+  \item \textbf{Sensor configurations:} Full GPS+IMU, IMU-only (GPS denied).
+\end{itemize}
+
+Each scenario is run for [N] Monte Carlo trials with [T] seconds duration at $\Delta t = $ [X] s.
+
+\subsection{Evaluation Metrics}
+
+\begin{itemize}
+  \item \textbf{Position RMSE} (m): $\text{RMSE}_{\text{pos}} = \sqrt{\frac{1}{N}\sum_{k=1}^{N}\|\mathbf{p}_k - \hat{\mathbf{p}}_k\|^2}$
+  \item \textbf{Heading RMSE} (rad): root-mean-square heading error with angle wrapping.
+  \item \textbf{Final drift} (m): position error at terminal time.
+  \item \textbf{Consistency}: Normalized Estimation Error Squared (NEES).
+\end{itemize}
+
+% ============================================================
+\section{Results}
+\label{sec:results}
+
+% TODO: Replace placeholder table and figures with real data.
+
+\begin{table}[t]
+  \centering
+  \caption{Position RMSE (m) across sea states and filters.}
+  \label{tab:results}
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Sea State} & \textbf{EKF} & \textbf{ES-EKF} & \textbf{In-EKF} \\
+    \midrule
+    Calm      & --   & --   & --   \\
+    Moderate  & --   & --   & --   \\
+    Heavy     & --   & --   & --   \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% TODO: Add trajectory comparison figure.
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=\columnwidth]{figures/trajectory_comparison.pdf}
+%   \caption{Estimated vs.\ true trajectories under heavy sea state.}
+%   \label{fig:trajectory}
+% \end{figure}
+
+% TODO: Add error-over-time figure.
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=\columnwidth]{figures/error_vs_time.pdf}
+%   \caption{Position error over time for each filter under moderate sea state.}
+%   \label{fig:error_time}
+% \end{figure}
+
+% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+
+% TODO: Interpret results. Suggested discussion points:
+% - How does error scale with sea state for each filter?
+% - Where does In-EKF show clear advantage over baseline EKF?
+% - Effect of GPS denial on each filter.
+% - Limitations: model fidelity, 2D simplification, tuning sensitivity.
+
+% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+% TODO: Summarize findings and state future work.
+
+This work presented a simulation-based comparison of standard EKF, Error-State EKF, and Invariant EKF for USV state estimation under varying sea conditions. Our results show [summary of key finding]. Future work includes extending the analysis to full 6-DOF dynamics, incorporating real sensor data, and evaluating additional filter variants.
+
+% ============================================================
+\section*{Acknowledgments}
+
+The authors thank the NAVARCH 568 course staff at the University of Michigan for guidance on this project.
+
+% ============================================================
+\bibliographystyle{IEEEtran}
+% Inline references for now. Replace with .bib file for final version.
+\begin{thebibliography}{9}
+
+\bibitem{hawaii_usv}
+% TODO: Add full citation details.
+University of Hawaii, ``State estimation for unmanned surface vessels,''
+\url{https://scholarspace.manoa.hawaii.edu/server/api/core/bitstreams/9c3e981d-f0bc-43d3-9eeb-542c1bd3636d/content}.
+
+\bibitem{barrau2017invariant}
+A.~Barrau and S.~Bonnabel, ``The invariant extended Kalman filter as a stable observer,''
+\textit{IEEE Transactions on Automatic Control}, vol.~62, no.~4, pp.~1797--1812, 2017.
+
+\bibitem{fossen2011handbook}
+T.~I.~Fossen, \textit{Handbook of Marine Craft Hydrodynamics and Motion Control}.
+John Wiley \& Sons, 2011.
+
+% TODO: Add more references (target 8-15 for final submission).
+
+\end{thebibliography}
+
+\end{document}
