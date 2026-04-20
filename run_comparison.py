@@ -29,6 +29,7 @@ from metrics import error_over_time, summarize
 
 ROOT = Path(__file__).parent
 FIG_DIR = ROOT / "figures"
+CSV_DIR = ROOT / "filter_outputs"
 
 
 @dataclass
@@ -63,6 +64,7 @@ SCENARIOS: list[Scenario] = [
 
 def main() -> None:
     FIG_DIR.mkdir(exist_ok=True)
+    CSV_DIR.mkdir(exist_ok=True)
 
     all_metrics: list[tuple[str, dict, dict]] = []
 
@@ -98,6 +100,7 @@ def main() -> None:
         _plot_trajectory(sc, ekf_states, es_ekf_states, truth_state)
         _plot_error_over_time(sc, clean.t, ekf_states, es_ekf_states, truth_state)
         _plot_orientation(sc, clean.t, ekf_states, es_ekf_states, truth_state)
+        _dump_csv(sc, clean.t, truth_state, ekf_states, es_ekf_states)
 
     _print_summary(all_metrics)
 
@@ -178,6 +181,26 @@ def _plot_orientation(
     fig.tight_layout()
     fig.savefig(FIG_DIR / f"orientation_{sc.slug}.png", dpi=150)
     plt.close(fig)
+
+
+def _dump_csv(
+    sc: Scenario,
+    t: np.ndarray,
+    truth: np.ndarray,
+    ekf: np.ndarray,
+    es: np.ndarray,
+) -> None:
+    """Write per-timestep truth + filter positions/Euler so teammates can do side-by-sides."""
+    header = (
+        "t,"
+        "truth_x,truth_y,truth_z,truth_roll,truth_pitch,truth_yaw,"
+        "ekf_x,ekf_y,ekf_z,ekf_vx,ekf_vy,ekf_vz,ekf_roll,ekf_pitch,ekf_yaw,"
+        "esekf_x,esekf_y,esekf_z,esekf_vx,esekf_vy,esekf_vz,esekf_roll,esekf_pitch,esekf_yaw"
+    )
+    data = np.hstack([t.reshape(-1, 1), truth, ekf, es])
+    out_path = CSV_DIR / f"filter_states_{sc.slug}.csv"
+    np.savetxt(out_path, data, delimiter=",", header=header, comments="", fmt="%.6f")
+    print(f"  wrote {out_path.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
