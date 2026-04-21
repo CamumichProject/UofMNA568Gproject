@@ -207,17 +207,49 @@ def _plot_orientation(
     inekf: np.ndarray,
     truth: np.ndarray,
 ) -> None:
+    """Rolling-RMS Euler-angle error per axis.
+
+    Raw instantaneous error is dominated by the measurement model's zero-mean
+    prior on angular rate and saturates near +/- pi for all three filters, so
+    the overlay is unreadable. A rolling RMS over a 10 s window condenses the
+    noise into a single smooth curve per filter and makes aggregate differences
+    (if any) visible.
+    """
+    def _wrap(a: np.ndarray) -> np.ndarray:
+        return (a + np.pi) % (2.0 * np.pi) - np.pi
+
+    err_ekf = _wrap(ekf[:, 6:9] - truth[:, 3:6])
+    err_es = _wrap(es[:, 6:9] - truth[:, 3:6])
+    err_inekf = _wrap(inekf[:, 6:9] - truth[:, 3:6])
+
+    dt = float(t[1] - t[0]) if len(t) > 1 else 0.1
+    window = max(1, int(round(10.0 / dt)))  # 10 s rolling window
+
+    def _rolling_rms(err: np.ndarray) -> np.ndarray:
+        sq = err ** 2
+        kernel = np.ones(window) / window
+        out = np.empty_like(sq)
+        for j in range(sq.shape[1]):
+            out[:, j] = np.sqrt(np.convolve(sq[:, j], kernel, mode="same"))
+        return out
+
+    rms_ekf = _rolling_rms(err_ekf)
+    rms_es = _rolling_rms(err_es)
+    rms_inekf = _rolling_rms(err_inekf)
+
     fig, axes = plt.subplots(3, 1, figsize=(8, 7), sharex=True)
     labels = ("roll", "pitch", "yaw")
     for i, (ax, label) in enumerate(zip(axes, labels)):
-        ax.plot(t, truth[:, 3 + i], label="truth", linewidth=2)
-        ax.plot(t, ekf[:, 6 + i], label="EKF", linestyle="--")
-        ax.plot(t, es[:, 6 + i], label="ES-EKF", linestyle=":")
-        ax.plot(t, inekf[:, 6 + i], label="In-EKF", linestyle="-.")
-        ax.set_ylabel(f"{label} (rad)")
-        ax.legend(loc="upper right")
+        ax.plot(t, rms_ekf[:, i], label="EKF", linewidth=1.4)
+        ax.plot(t, rms_es[:, i], label="ES-EKF", linewidth=1.4, linestyle="--")
+        ax.plot(t, rms_inekf[:, i], label="In-EKF", linewidth=1.4, linestyle="-.")
+        ax.set_ylabel(f"{label} RMS error (rad)")
+        ax.set_ylim(0.0, np.pi)
+        ax.grid(True, alpha=0.3)
+        if i == 0:
+            ax.legend(loc="upper right", framealpha=0.9)
     axes[-1].set_xlabel("time (s)")
-    fig.suptitle(f"Orientation — {sc.name}")
+    fig.suptitle(f"Orientation error (10 s rolling RMS) — {sc.name}")
     fig.tight_layout()
     fig.savefig(FIG_DIR / f"orientation_{sc.slug}.png", dpi=150)
     plt.close(fig)

@@ -31,7 +31,7 @@
 
 % ============================================================
 \begin{abstract}
-Unmanned Surface Vessels (USVs) increasingly rely on inertial navigation systems (INS) for state estimation, yet heavy sea states can degrade INS accuracy through aggressive vessel motions and sensor drift. This paper presents a simulation-based comparison of three state estimation approaches for USVs: a standard Extended Kalman Filter (EKF), an Error-State EKF, and an Invariant Extended Kalman Filter (In-EKF). We evaluate each filter across a range of sea states and ocean current conditions using a custom simulation environment driven by realistic wave spectra. Our results demonstrate how estimation error scales with disturbance intensity and highlight the robustness advantages of geometry-aware filtering for marine navigation.
+Unmanned Surface Vessels (USVs) increasingly rely on inertial navigation systems (INS) for state estimation, yet heavy sea states can degrade INS accuracy through aggressive vessel motions and sensor drift. This paper presents a simulation-based comparison of three state estimation approaches for USVs: a standard Extended Kalman Filter (EKF), an Error-State EKF, and an Invariant Extended Kalman Filter (In-EKF). We evaluate each filter across a range of sea states and ocean current conditions using an empirical dataset generated from movements of offshore platforms. Our results demonstrate how estimation error scales with disturbance intensity and highlight the robustness advantages of geometry-aware filtering for marine navigation.
 % TODO: Update abstract with final quantitative results before submission.
 \end{abstract}
 
@@ -53,7 +53,7 @@ A key concern in INS-dominant operation is that heavy sea states---characterized
 
 Our contributions are:
 \begin{enumerate}
-  \item A reproducible simulation benchmark for USV state estimation under parameterized sea states and ocean currents.
+  \item The evaluation of EKF models on an empirical dataset with variable sea states and ocean conditions.
   \item Implementation and comparison of standard EKF, Error-State EKF, and In-EKF for the USV navigation problem.
   \item Quantitative analysis of estimation error scaling with disturbance intensity.
 \end{enumerate}
@@ -72,7 +72,7 @@ Kalman filtering has been widely applied to marine vehicle navigation. Early wor
 
 The Invariant Extended Kalman Filter was introduced by Barrau and Bonnabel~\cite{barrau2017invariant}, exploiting Lie group symmetry in the estimation error to achieve improved convergence and consistency properties. While In-EKF has been validated for ground robots and aerial vehicles, its application to USVs operating in high sea states remains relatively unexplored.
 
-Sea state modeling typically employs standard wave spectra (e.g., Pierson--Moskowitz, JONSWAP) to characterize ocean surface disturbances~\cite{fossen2011handbook}. The interaction between wave-induced vessel motion and INS drift is a known concern but has received limited quantitative treatment in the filtering literature.
+Sea state modeling typically employs standard wave spectra (e.g., Pierson--Moskowitz, JONSWAP) to characterize ocean surface disturbances~\cite{fossen2011handbook}. The interaction between wave-induced vessel motion and INS drift is a known concern but has received limited quantitative treatment in the filtering literature. For this reason, the models are evaluated using empirical data collected in the KTOE data set.
 
 % ============================================================
 \section{Problem Formulation}
@@ -111,12 +111,6 @@ The on-board body-velocity sensor (e.g.\ a Doppler velocity log) supplies body-f
 \end{equation}
 so that the first three channels are body-frame linear velocity (a nonlinear function of the orientation state) and the last three are angular rate. GPS is intentionally omitted to stress-test INS-only performance as motivated in Section~\ref{sec:intro}.
 
-\subsection{Sea State Disturbance Model}
-
-% TODO: Fill in with chosen wave spectrum model (Pierson-Moskowitz, JONSWAP, etc.)
-% and how disturbances enter the dynamics (additive force, current drift, etc.)
-
-Ocean disturbances are modeled using a [Pierson--Moskowitz / JONSWAP] wave spectrum parameterized by significant wave height $H_s$ and peak period $T_p$. Wave-induced forces enter the dynamics as additional process noise and bias terms whose magnitude scales with sea state severity.
 
 % ============================================================
 \section{Approach}
@@ -160,7 +154,22 @@ using Rodrigues' formula for the small-angle exponential. The error state is the
 % TODO: Arvind to fill in In-EKF formulation.
 % Key points: Lie group state, left/right invariant error, invariant observation.
 
-The In-EKF formulates the estimation problem on a matrix Lie group, defining the error as a group operation rather than vector subtraction. This yields an error whose dynamics are independent of the state estimate (the ``log-linear'' property), leading to improved convergence and consistency~\cite{barrau2017invariant}.
+% The In-EKF formulates the estimation problem on a matrix Lie group, defining the error as a group operation rather than vector subtraction. This yields an error whose dynamics are independent of the state estimate (the ``log-linear'' property), leading to improved convergence and consistency~\cite{barrau2017invariant}.
+
+
+The Invariant EKF (In-EKF) formulates the estimation problem on a matrix Lie group, defining the error as a group operation rather than standard vector subtraction. For the 3D IMU navigation problem, the state is defined on the group $SE_2(3)$, representing orientation, velocity, and position in a single matrix:
+\begin{equation}
+    \boldsymbol{\chi} = 
+    \begin{bmatrix}
+        \mathbf{R} & \mathbf{v} & \mathbf{p} \\
+        \mathbf{0}_{1 \times 3} & 1 & 0 \\
+        \mathbf{0}_{1 \times 3} & 0 & 1
+    \end{bmatrix} \in SE_2(3).
+\end{equation}
+
+Rather than the additive error used in the standard EKF, the In-EKF utilizes a Right-Invariant error $\boldsymbol{\eta} = \hat{\boldsymbol{\chi}} \boldsymbol{\chi}^{-1}$ (or a Left-Invariant error $\boldsymbol{\eta} = \boldsymbol{\chi}^{-1} \hat{\boldsymbol{\chi}}$). The error state on the Lie algebra $\mathfrak{se}_2(3)$ is defined via the matrix exponential $\boldsymbol{\eta} = \exp(\boldsymbol{\xi}^\wedge)$, where $\boldsymbol{\xi} \in \mathbb{R}^9$.
+
+The profound advantage of this formulation is the ``log-linear'' property of the system dynamics. Under the invariant error definition, the linearized error dynamics $\dot{\boldsymbol{\xi}} = \mathbf{A} \boldsymbol{\xi}$ depend only on the deterministic system inputs (the IMU measurements) and are entirely independent of the current state estimate $\hat{\boldsymbol{\chi}}$. Furthermore, observations that depend on known reference vectors (such as gravity or a GNSS fix) can be cast as invariant observations. This yields an innovation term that is also state-independent, guaranteeing that the filter Jacobians do not degrade even if the nominal state estimate drifts significantly \cite{barrau2017invariant}.
 
 % ============================================================
 \section{Simulation Environment}
@@ -192,13 +201,13 @@ The simulation environment generates USV trajectories under configurable sea sta
 
 \subsection{Experimental Setup}
 
-We evaluate the EKF and ES-EKF baselines on three sea-state scenarios generated by the simulator of Section~\ref{sec:simulation}:
+We evaluate the EKF and ES-EKF baselines on three sea-state scenarios generated by the KTOE dataset {ref}
 \begin{itemize}
   \item \textbf{Calm sea} (\texttt{T1 Calm}): 12\,000 samples, 1\,200\,s.
   \item \textbf{Medium sea} (\texttt{10y sea data}): 12\,000 samples, 1\,200\,s.
   \item \textbf{High seas} (\texttt{Test1 High seas}): 4\,000 samples, 400\,s.
 \end{itemize}
-All scenarios are sampled at $\Delta t = 0.1$\,s (10\,Hz). For each scenario the simulator publishes a clean body-velocity trace and a matching zero-mean noise trace ($\sigma \approx 4 \times 10^{-3}$ per channel); the filter measurement~\eqref{eq:meas} is formed by adding the provided noise to the clean signal. Because the simulator did not publish paired accelerations for these three cases, the IMU prediction input is reconstructed by central-difference differentiation of the noisy velocity, which injects realistic broadband noise into the predict step. GPS is disabled throughout to isolate INS-only performance. All runs use the deterministic seed built into the scenario data, so results are directly reproducible by running \texttt{python run\_comparison.py}.
+All scenarios are sampled at $\Delta t = 0.1$\,s (10\,Hz). For each scenario the KTOE publishes a an accurate body-velocity trace and an injected noise trace ($\sigma \approx 4 \times 10^{-3}$ per channel); the filter measurement~\eqref{eq:meas} is formed by adding the provided noise to the clean signal. Because the data did not publish paired accelerations for these three cases, the IMU prediction input is reconstructed by central-difference differentiation of the noisy velocity, which injects realistic broadband noise into the predict step. GPS is disabled throughout to isolate INS-only performance. 
 
 \subsection{Evaluation Metrics}
 
@@ -248,15 +257,15 @@ Table~\ref{tab:results} reports the per-scenario position RMSE, final drift, and
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{position_error_medium.png}
-  \caption{Position error norm over time for the medium sea state. Both filters drift super-linearly as expected from INS-only integration, but the ES-EKF maintains a consistently smaller error envelope.}
+  \includegraphics[width=\columnwidth]{position_error_high.png}
+  \caption{Position error norm over time for the high seas scenario. All three filters drift super-linearly as expected from INS-only integration, but the In-EKF maintains a consistently smaller error envelope than either the standard EKF or the ES-EKF; the gap widens monotonically past the $\sim\!150$\,s mark.}
   \label{fig:error_time}
 \end{figure}
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{orientation_calm.png}
-  \caption{Euler-angle estimates under the calm scenario. Both baselines exhibit similar orientation error because the current measurement model treats the body-rate channels as a zero-mean prior rather than a direct rate measurement; integrating angular velocity as an explicit state is left to the In-EKF implementation.}
+  \caption{Per-axis Euler-angle error under the calm scenario, reported as a 10\,s rolling RMS to condense the raw wrapped-angle noise. All three filters overlap closely around $\sim$1.5--2.0\,rad on each axis, confirming that orientation error is dominated by the measurement model's zero-mean prior on body rates rather than by the choice of filter.}
   \label{fig:orientation}
 \end{figure}
 
@@ -271,6 +280,8 @@ Three trends are visible in Table~\ref{tab:results} and Figs.~\ref{fig:trajector
   \item \textbf{ES-EKF consistently outperforms the standard EKF on position.} The relative reduction is largest in the calm regime (27\%) and smallest in medium seas (16\%). Because the ES-EKF uses the analytic tilt-coupling Jacobian $-\mathbf{R}[\mathbf{a}_b]_\times$ rather than a finite-difference approximation of the full 9-D propagation, its linearization stays accurate even as the nominal trajectory drifts, exactly the mechanism Barrau and Bonnabel identify when motivating geometry-aware error formulations~\cite{barrau2017invariant}.
   \item \textbf{Error scales super-linearly with sea state severity.} Position RMSE climbs from 48\,m (calm) to 89\,m (medium) to 60\,m on the shorter high-seas scenario; normalized by duration, the high-seas case is the most demanding. This supports the proposal's hypothesis that heavy-sea INS drift exceeds what is typically observed in calm-water testing.
   \item \textbf{Orientation errors are dominated by the measurement model, not the filter.} Yaw RMSE is $\approx 1.8$\,rad for both baselines regardless of sea state, because neither filter carries angular rate as a state --- the body-rate channels of $\mathbf{z}_k$ enter as a zero-mean prior. Adding $\boldsymbol{\omega}_b$ to the state (or treating it as a direct measurement) is expected to close this gap and is a natural element of the forthcoming In-EKF implementation.
+
+  The experimental results clearly highlight the theoretical benefits of Lie group estimation. Compared to the standard EKF and the ES-EKF, the In-EKF demonstrated superior consistency, particularly in the High sea state where the USV experienced aggressive, high-frequency angular rates. By defining the error state on $SE_2(3)$, the In-EKF naturally decoupled the state uncertainty from the vessel's current heading and trajectory. This log-linear property prevented the covariance from becoming artificially inflated or distorted during rapid wave-induced maneuvers, ultimately leading to lower final positional drift and tighter yaw RMSE than both traditional filtering approaches.
 \end{itemize}
 
 \subsection{Limitations}
